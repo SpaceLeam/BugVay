@@ -41,19 +41,44 @@ func (s *EndpointService) CreateEndpoint(ctx context.Context, assetID int, rawUR
 	hash := HashURL(canonical)
 
 	var endpoint Endpoint
+
+	// Check if endpoint already exists
 	err := s.pg.Pool.QueryRow(ctx, `
-		INSERT INTO endpoints (asset_id, url, canonical_url, hash, discovered_by)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (hash) DO UPDATE 
-		SET discovered_by = array_append(endpoints.discovered_by, $5)
-		RETURNING id, asset_id, url, canonical_url, hash, crawled, discovered_by, created_at
-	`, assetID, rawURL, canonical, hash, []string{source}).Scan(
+		SELECT id, asset_id, url, canonical_url, hash, crawled, discovered_by, created_at
+		FROM endpoints WHERE hash = $1
+	`, hash).Scan(
 		&endpoint.ID, &endpoint.AssetID, &endpoint.URL, &endpoint.CanonicalURL,
 		&endpoint.Hash, &endpoint.Crawled, &endpoint.DiscoveredBy, &endpoint.CreatedAt,
 	)
 
-	if err != nil {
-		return nil, fmt.Errorf("insert endpoint: %w", err)
+	if err == pgx.ErrNoRows {
+		// Create new endpoint
+		err = s.pg.Pool.QueryRow(ctx, `
+			INSERT INTO endpoints (asset_id, url, canonical_url, hash, discovered_by)
+			VALUES ($1, $2, $3, $4, $5)
+			RETURNING id, asset_id, url, canonical_url, hash, crawled, discovered_by, created_at
+		`, assetID, rawURL, canonical, hash, []string{source}).Scan(
+			&endpoint.ID, &endpoint.AssetID, &endpoint.URL, &endpoint.CanonicalURL,
+			&endpoint.Hash, &endpoint.Crawled, &endpoint.DiscoveredBy, &endpoint.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("insert endpoint: %w", err)
+		}
+	} else if err == nil {
+		// Endpoint exists, update discovered_by only if source not already present
+		if !contains(endpoint.DiscoveredBy, source) {
+			_, err = s.pg.Pool.Exec(ctx, `
+				UPDATE endpoints 
+				SET discovered_by = array_append(discovered_by, $1)
+				WHERE id = $2
+			`, source, endpoint.ID)
+			if err != nil {
+				return nil, fmt.Errorf("update discovered_by: %w", err)
+			}
+			endpoint.DiscoveredBy = append(endpoint.DiscoveredBy, source)
+		}
+	} else {
+		return nil, fmt.Errorf("check endpoint: %w", err)
 	}
 
 	return &endpoint, nil
@@ -146,4 +171,14 @@ func HashURL(canonicalURL string) string {
 	h := sha256.New()
 	h.Write([]byte(canonicalURL))
 	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
+// contains checks if a string exists in a slice
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }

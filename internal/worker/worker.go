@@ -78,7 +78,7 @@ func (w *Worker) handleXSSScan(ctx context.Context, task *asynq.Task) error {
 	// Get endpoint details
 	endpoint, err := w.endpointService.GetEndpoint(ctx, payload.EndpointID)
 	if err != nil {
-		return err
+		return fmt.Errorf("get endpoint: %w", err)
 	}
 
 	// Run XSS scanner
@@ -89,6 +89,7 @@ func (w *Worker) handleXSSScan(ctx context.Context, task *asynq.Task) error {
 		Method:     "GET",
 	})
 	if err != nil {
+		// Return error so Asynq can retry
 		return fmt.Errorf("scan failed: %w", err)
 	}
 
@@ -106,6 +107,7 @@ func (w *Worker) handleXSSScan(ctx context.Context, task *asynq.Task) error {
 
 		if err := w.findingService.CreateFinding(ctx, finding); err != nil {
 			log.Printf("Failed to save finding: %v", err)
+			// Don't fail task if finding save fails (already scanned)
 		}
 	}
 

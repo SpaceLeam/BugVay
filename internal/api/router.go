@@ -44,6 +44,7 @@ func NewRouter(pg *database.PostgresDB, ch *database.ClickHouseDB, q *queue.Clie
 	scanService := services.NewScanService(pg, ch, q)
 	findingService := services.NewFindingService(pg, ch)
 	programService := services.NewProgramService(pg)
+	assetService := services.NewAssetService(pg)
 
 	// API v1 routes
 	v1 := r.Group("/api/v1")
@@ -54,6 +55,15 @@ func NewRouter(pg *database.PostgresDB, ch *database.ClickHouseDB, q *queue.Clie
 			programs.GET("", handlers.ListPrograms(programService))
 			programs.POST("", handlers.CreateProgram(programService))
 			programs.GET("/:id", handlers.GetProgram(programService))
+		}
+
+		// Assets
+		assets := v1.Group("/assets")
+		{
+			assets.GET("", handlers.ListAssets(assetService))
+			assets.POST("", handlers.CreateAsset(assetService))
+			assets.GET("/:id", handlers.GetAsset(assetService))
+			assets.DELETE("/:id", handlers.DeleteAsset(assetService))
 		}
 
 		// Endpoints

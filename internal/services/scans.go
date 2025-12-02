@@ -68,7 +68,7 @@ func (s *ScanService) CreateScan(ctx context.Context, req *ScanRequest) (*Scan, 
 	}
 
 	scan := &Scan{
-		ID:        fmt.Sprintf("scan_%d", time.Now().Unix()),
+		ID:        fmt.Sprintf("scan_%s", generateScanID()),
 		Status:    "running",
 		Scanners:  req.Scanners,
 		JobsTotal: len(jobIDs),
@@ -76,6 +76,12 @@ func (s *ScanService) CreateScan(ctx context.Context, req *ScanRequest) (*Scan, 
 	}
 
 	return scan, nil
+}
+
+// generateScanID creates a short UUID for scan identification
+func generateScanID() string {
+	// Use timestamp + random for shorter IDs (16 chars)
+	return fmt.Sprintf("%d%04x", time.Now().Unix(), time.Now().Nanosecond()%0xFFFF)
 }
 
 func (s *ScanService) GetScanStatus(ctx context.Context, scanID string) (*Scan, error) {

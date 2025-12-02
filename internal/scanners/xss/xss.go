@@ -56,9 +56,35 @@ func (s *XSSScanner) Scan(ctx context.Context, input *scanners.ScanInput) (*scan
 				continue
 			}
 
-			// Check for reflection
+			// Check for reflection (both raw and HTML-decoded)
 			bodyStr := string(body)
-			if strings.Contains(bodyStr, payload) {
+			bodyLower := strings.ToLower(bodyStr)
+
+			// Skip if payload is HTML-encoded (likely not exploitable)
+			encodedPayload := strings.ReplaceAll(payload, "<", "&lt;")
+			encodedPayload = strings.ReplaceAll(encodedPayload, ">", "&gt;")
+			encodedPayload = strings.ReplaceAll(encodedPayload, "\"", "&quot;")
+
+			isRawReflected := strings.Contains(bodyStr, payload)
+			isEncodedOnly := !isRawReflected && strings.Contains(bodyStr, encodedPayload)
+
+			// Skip if only encoded version found (safe)
+			if isEncodedOnly {
+				continue
+			}
+
+			// Check if in executable context (not in comments or JSON)
+			if isRawReflected {
+				// Skip if inside HTML comment
+				if strings.Contains(bodyStr, "<!--"+payload) || strings.Contains(bodyStr, payload+"-->") {
+					continue
+				}
+
+				// Skip if inside JSON response (Content-Type check would be better)
+				if strings.HasPrefix(strings.TrimSpace(bodyStr), "{") && strings.Contains(bodyLower, "application/json") {
+					continue
+				}
+
 				return &scanners.ScanResult{
 					Vulnerable: true,
 					Severity:   "medium",
